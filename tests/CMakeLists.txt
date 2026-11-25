@@ -218,7 +218,7 @@ endforeach()
 # test-malloc-fail needs --wrap flags for malloc injection.
 if (HAVE_LINKER_WRAP)
     target_link_options(test-malloc-fail PRIVATE
-        -Wl,--wrap=malloc,--wrap=calloc,--wrap=strdup,--wrap=strndup)
+        -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=strdup,--wrap=strndup)
 endif()
 
 

@@ -1,0 +1,4 @@
+Fixed several minor crashes that could occur in OOM situations.
+
+Test coverage of memory allocation failures was improved overall, allowing to
+catch more cases like these.

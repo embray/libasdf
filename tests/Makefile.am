@@ -223,7 +223,7 @@ test_malloc_fail_unit_CPPFLAGS = $(unit_test_cppflags)
 test_malloc_fail_unit_CFLAGS = $(unit_test_cflags)
 test_malloc_fail_unit_LDFLAGS = \
     $(unit_test_ldflags) \
-    -Wl,--wrap=malloc,--wrap=calloc,--wrap=strdup,--wrap=strndup
+    -Wl,--wrap=malloc,--wrap=calloc,--wrap=realloc,--wrap=strdup,--wrap=strndup
 test_malloc_fail_unit_LDADD = libmunit.a $(top_builddir)/libasdf_static.la
 endif
 

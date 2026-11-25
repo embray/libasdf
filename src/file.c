@@ -153,6 +153,15 @@ static asdf_file_t *asdf_file_create(asdf_config_t *user_config, asdf_file_mode_
     file->config = config;
     file->mode = mode;
     file->base.ctx = asdf_context_create(&config->log);
+
+    if (UNLIKELY(!file->base.ctx)) {
+        // Don't allow a failed context allocation to propagate; just
+        // leads to worse bugs down the line
+        free(config);
+        free(file);
+        return NULL;
+    }
+
     asdf_config_validate(file);
     // Initialize the tag map
     asdf_str_map_reserve(&file->tag_map, ASDF_FILE_TAG_MAP_DEFAULT_SIZE);
@@ -172,6 +181,11 @@ asdf_parser_t *asdf_file_parser(asdf_file_t *file) {
         return file->parser;
 
     asdf_parser_t *parser = asdf_parser_create_ctx(file->base.ctx, &file->config->parser);
+
+    if (UNLIKELY(!parser))
+        // OOM error, already handled by asdf_parser_create_ctx
+        return NULL;
+
     asdf_parser_set_input_stream(parser, file->stream);
     file->parser = parser;
     return parser;
@@ -591,6 +605,12 @@ struct fy_document *asdf_file_tree_document_create_default(asdf_file_t *file) {
     return tree;
 failure:
     ASDF_ERROR_OOM(file);
+    if (root && !fy_node_is_attached(root)) {
+        // If root is not attached to the document yet (failed before
+        // fy_document_set_root) it won't be freed by fy_document_destroy
+        // below.
+        fy_node_free(root);
+    }
     fy_document_destroy(tree);
     return NULL;
 }

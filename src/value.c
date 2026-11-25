@@ -2871,6 +2871,7 @@ static asdf_find_iter_impl_t *asdf_find_iter_create(
     impl->frames = calloc(impl->frame_cap, sizeof(asdf_find_frame_t));
 
     if (!impl->frames) {
+        ASDF_ERROR_OOM(root ? root->file : NULL);
         free(impl);
         return NULL;
     }
@@ -2883,6 +2884,7 @@ static asdf_find_iter_impl_t *asdf_find_iter_create(
 /** Doubles the frame capacity when needed */
 static inline asdf_find_frame_t *asdf_find_iter_push_frame(
     asdf_find_iter_impl_t *iter, asdf_value_t *container, asdf_depth_t depth) {
+    assert(iter && container);
     // Refuse to push a new frame if we are already at max-depth or the new
     // container doesn't match the descend predicate.
     // Always allow push though if frame_count == 0; that is, the root node is
@@ -2983,11 +2985,20 @@ static asdf_value_t *asdf_find_iter_next_bfs(asdf_find_iter_impl_t *iter) {
         if (asdf_value_is_container(child)) {
             // In BFS, copy the child before pushing: the next container_iter_next
             // call will destroy the original value wrapper.
-            asdf_find_frame_t *new_frame = asdf_find_iter_push_frame(
-                iter, asdf_value_copy(child), frame->depth + 1);
+            asdf_value_t *new_child = asdf_value_copy(child);
 
-            if (!new_frame)
+            if (UNLIKELY(!new_child)) {
+                ASDF_ERROR_OOM(child->file);
                 return NULL;
+            }
+
+            asdf_find_frame_t *new_frame = asdf_find_iter_push_frame(
+                iter, new_child, frame->depth + 1);
+
+            if (UNLIKELY(!new_frame)) {
+                asdf_value_destroy(new_child);
+                return NULL;
+            }
 
             new_frame->visited = true;
             new_frame->owns_container = true;

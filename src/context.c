@@ -3,6 +3,7 @@
 #include <stdlib.h>
 
 #include "context.h"
+#include "error.h"
 #include "log.h"
 #include "util.h"
 
@@ -18,8 +19,10 @@ static asdf_log_cfg_t asdf_context_log_config_default = {
 asdf_context_t *asdf_context_create(const asdf_log_cfg_t *log_config) {
     asdf_context_t *ctx = malloc(sizeof(asdf_context_t));
 
-    if (!ctx)
+    if (!ctx) {
+        ASDF_ERROR_OOM(NULL);
         return ctx;
+    }
 
     atomic_init(&ctx->refcount, 1);
     ctx->error = NULL;

@@ -1173,8 +1173,14 @@ static const asdf_parser_cfg_t default_asdf_parser_cfg = {.flags = 0};
 asdf_parser_t *asdf_parser_create_ctx(asdf_context_t *ctx, const asdf_parser_cfg_t *config) {
     asdf_parser_t *parser = calloc(1, sizeof(asdf_parser_t));
 
-    if (!parser)
+    if (!parser) {
+        if (ctx) {
+            asdf_context_error_oom(ctx, __FILE__, __LINE__);
+        } else {
+            ASDF_ERROR_OOM(NULL);
+        }
         return parser;
+    }
 
     config = config ? config : &default_asdf_parser_cfg;
 
@@ -1185,6 +1191,7 @@ asdf_parser_t *asdf_parser_create_ctx(asdf_context_t *ctx, const asdf_parser_cfg
 
     if (!ctx) {
         free(parser);
+        ASDF_ERROR_OOM(NULL);
         return NULL;
     }
 
@@ -1252,6 +1259,7 @@ int asdf_parser_set_input_mem(asdf_parser_t *parser, const void *buf, size_t siz
 
 
 int asdf_parser_set_input_stream(asdf_parser_t *parser, asdf_stream_t *stream) {
+    assert(parser);
     parser->stream = stream;
     parser->state = ASDF_PARSER_STATE_ASDF_VERSION;
     parser->should_close = false;
