@@ -1,0 +1,2 @@
+Fixed serializing of an inline ndarray of dtype float16, which caused garbage
+to be written and a memory leak.

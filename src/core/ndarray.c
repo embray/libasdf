@@ -1194,7 +1194,8 @@ static asdf_sequence_t *asdf_ndarray_serialize_seq_level(
                 tmp[idx] = (float)((const _Float16 *)start)[idx];
             }
 
-            seq = asdf_sequence_of_float(file, (const float *)start, (int)dim_size);
+            seq = asdf_sequence_of_float(file, (const float *)tmp, (int)dim_size);
+            free(tmp);
             break;
         }
 #endif

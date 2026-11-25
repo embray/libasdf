@@ -964,6 +964,169 @@ MU_TEST(ndarray_write_inline_data) {
 }
 
 
+static char *inline_dtypes[] = {
+    "bool8",
+    "int8",
+    "uint8",
+    "int16",
+    "uint16",
+    "int32",
+    "uint32",
+    "int64",
+    "uint64",
+    "float16",
+    "float32",
+    "float64",
+    NULL};
+
+static MunitParameterEnum ndarray_inline_dtype_params[] = {
+    {"dtype", inline_dtypes},
+    {NULL, NULL}
+};
+
+
+/**
+ * Test values for `ndarray_inline_roundtrip_dtype`, all exactly representable
+ * in every datatype they are used with: negative values only for signed types
+ * and fractional values only for floating-point types
+ */
+static double inline_test_value(asdf_scalar_datatype_t dtype, size_t idx) {
+    double val = (double)(idx + 1);
+
+    switch (dtype) {
+    case ASDF_DATATYPE_BOOL8:
+        return (double)(idx % 2);
+    case ASDF_DATATYPE_UINT8:
+    case ASDF_DATATYPE_UINT16:
+    case ASDF_DATATYPE_UINT32:
+    case ASDF_DATATYPE_UINT64:
+        return val;
+    case ASDF_DATATYPE_FLOAT16:
+    case ASDF_DATATYPE_FLOAT32:
+    case ASDF_DATATYPE_FLOAT64:
+        val += 0.25;
+        break;
+    default:
+        break;
+    }
+
+    return idx % 2 ? -val : val;
+}
+
+
+static void store_from_double(void *dst, asdf_scalar_datatype_t dst_type, size_t idx, double val) {
+    switch (dst_type) {
+        case ASDF_DATATYPE_BOOL8:
+            ((bool*)dst)[idx] = val != 0;
+            break;
+        case ASDF_DATATYPE_INT8:
+            ((int8_t*)dst)[idx] = (int8_t)val;
+            break;
+        case ASDF_DATATYPE_UINT8:
+            ((uint8_t*)dst)[idx] = (uint8_t)val;
+            break;
+        case ASDF_DATATYPE_INT16:
+            ((int16_t*)dst)[idx] = (int16_t)val;
+            break;
+        case ASDF_DATATYPE_UINT16:
+            ((uint16_t*)dst)[idx] = (uint16_t)val;
+            break;
+        case ASDF_DATATYPE_INT32:
+            ((int32_t*)dst)[idx] = (int32_t)val;
+            break;
+        case ASDF_DATATYPE_UINT32:
+            ((uint32_t*)dst)[idx] = (uint32_t)val;
+            break;
+        case ASDF_DATATYPE_INT64:
+            ((int64_t*)dst)[idx] = (int64_t)val;
+            break;
+        case ASDF_DATATYPE_UINT64:
+            ((uint64_t*)dst)[idx] = (uint64_t)val;
+            break;
+#ifdef HAVE_FLOAT16
+        case ASDF_DATATYPE_FLOAT16:
+            ((half*)dst)[idx] = (half)val;
+            break;
+#endif
+        case ASDF_DATATYPE_FLOAT32:
+            ((float*)dst)[idx] = (float)val;
+            break;
+        case ASDF_DATATYPE_FLOAT64:
+            ((double*)dst)[idx] = val;
+            break;
+        default:
+            munit_errorf("unsupported datatype %d", dst_type);
+    }
+}
+
+
+/**
+ * Round-trip a 2-D inline ndarray of each scalar datatype
+ *
+ * Covers both the serialization of the inline data to nested YAML sequences
+ * and its deserialization, for each datatype separately.
+ */
+MU_TEST(ndarray_inline_roundtrip_dtype) {
+    const char *dtype_str = munit_parameters_get(params, "dtype");
+    asdf_scalar_datatype_t dtype = asdf_scalar_datatype_from_string(dtype_str);
+    assert_int(dtype, !=, ASDF_DATATYPE_UNKNOWN);
+
+#ifndef HAVE_FLOAT16
+    if (dtype == ASDF_DATATYPE_FLOAT16)
+        return MUNIT_SKIP;
+#endif
+
+    const char *out_path = get_temp_file_path(fixture->tempfile_prefix, ".asdf");
+    uint64_t shape[2] = {2, 3};
+    size_t nelems = 6;
+    asdf_ndarray_t ndarray_out = {
+        .datatype = {.type = dtype, .size = asdf_scalar_datatype_size(dtype)},
+        .byteorder = ASDF_BYTEORDER_LITTLE,
+        .ndim = 2,
+        .shape = shape,
+    };
+    void *data_out = asdf_ndarray_data_alloc(&ndarray_out);
+    assert_not_null(data_out);
+    for (size_t idx = 0; idx < nelems; idx++)
+        store_from_double(data_out, dtype, idx, inline_test_value(dtype, idx));
+    asdf_ndarray_storage_set(&ndarray_out, ASDF_ARRAY_STORAGE_INLINE);
+
+    asdf_file_t *file = asdf_open(NULL);
+    assert_not_null(file);
+    asdf_value_t *value = asdf_value_of_ndarray(file, &ndarray_out);
+    assert_not_null(value);
+    assert_int(asdf_set_value(file, "data", value), ==, ASDF_VALUE_OK);
+    assert_int(asdf_write_to(file, out_path), ==, 0);
+    asdf_close(file);
+    asdf_ndarray_data_dealloc(&ndarray_out);
+
+    file = asdf_open(out_path, "r");
+    assert_not_null(file);
+    asdf_ndarray_t *ndarray = NULL;
+    assert_int(asdf_get_ndarray(file, "data", &ndarray), ==, ASDF_VALUE_OK);
+    assert_not_null(ndarray);
+    assert_int(asdf_ndarray_storage(ndarray), ==, ASDF_ARRAY_STORAGE_INLINE);
+    assert_int(ndarray->ndim, ==, 2);
+    assert_int((int)ndarray->shape[0], ==, 2);
+    assert_int((int)ndarray->shape[1], ==, 3);
+    assert_int(ndarray->datatype.type, ==, dtype);
+
+    size_t size = 0;
+    const void *data = asdf_ndarray_data(ndarray, &size);
+    assert_not_null(data);
+    assert_size(size, ==, nelems * asdf_scalar_datatype_size(dtype));
+    for (size_t idx = 0; idx < nelems; idx++) {
+        double actual = dtype == ASDF_DATATYPE_BOOL8 ? (double)((const bool *)data)[idx]
+                                                     : normalize_to_double(data, dtype, idx);
+        assert_double(actual, ==, inline_test_value(dtype, idx));
+    }
+
+    asdf_ndarray_destroy(ndarray);
+    asdf_close(file);
+    return MUNIT_OK;
+}
+
+
 MU_TEST(ndarray_inline_warning_thresh) {
     uint64_t shape[1] = {100};
     asdf_ndarray_t ndarray = {
@@ -1870,6 +2033,7 @@ MU_TEST_SUITE(
     MU_RUN_TEST(ndarray_read_inline_data),
     MU_RUN_TEST(ndarray_write_empty_inline_data),
     MU_RUN_TEST(ndarray_write_inline_data),
+    MU_RUN_TEST(ndarray_inline_roundtrip_dtype, ndarray_inline_dtype_params),
     MU_RUN_TEST(ndarray_inline_warning_thresh),
     MU_RUN_TEST(ndarray_array_storage_override, ndarray_array_storage_params),
     MU_RUN_TEST(heap_use_after_free_issue_63),
